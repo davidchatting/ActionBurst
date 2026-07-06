@@ -113,8 +113,174 @@ function onFileDropped(file) {
   });
 }
 
-// generateLowResImage(+Async), generateMask(+Async), processHomography, and
-// getTextureFromElement now live in imgproc.js
+function setImageTransform(element, transform) {
+  if (element && Array.isArray(transform)) {
+    element.setAttribute('data-transform', JSON.stringify(transform));
+  }
+}
+
+function getImageTransformFromElement(element, traverse = false) {
+  let result = null;
+
+  if (element) {
+    const b = traverse ? (getImageTransformFromElement(element.parentElement, false) || identityMatrix) : identityMatrix;
+    try {
+      result = JSON.parse(element.getAttribute('data-transform'));
+    }
+    catch (e) {
+    }
+    if (result) result = multiplyMatrix4x4(b, result);
+  }
+
+  return result;
+}
+
+function generateLowResImage(imgElement, onloaded = () => {}) {
+  let lowresImg = null;
+
+  const lowresMaxPixels = 1024 * 768;
+  if (imgElement.width * imgElement.height > lowresMaxPixels) {
+    const s = Math.sqrt(lowresMaxPixels / (imgElement.width * imgElement.height));
+
+    const targetW = Math.round(imgElement.width * s);
+    const targetH = Math.round(imgElement.height * s);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(imgElement, 0, 0, targetW, targetH);
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 1.0);
+    canvas.width = 0;
+    canvas.height = 0;
+
+    lowresImg = createImg(dataUrl, '');
+    lowresImg.elt.onload = onloaded;
+
+    // Attach a 4x4 scaling transform (row-major)
+    const invS = 1 / s;
+    const scaleTransform = [
+      invS, 0, 0, 0,
+      0, invS, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ];
+    setImageTransform(lowresImg.elt, scaleTransform);
+  } else {
+    lowresImg = new p5.Element(imgElement);
+    setTimeout(onloaded, 0);
+
+    // Attach identity transform (no scaling)
+    setImageTransform(lowresImg.elt, identityMatrix);
+  }
+
+  return lowresImg;
+}
+
+// Helper: Promise version of generateLowResImage
+function generateLowResImageAsync(imgElement) {
+  return new Promise(resolve => {
+    const lowresImg = generateLowResImage(imgElement, () => resolve(lowresImg));
+  });
+}
+
+// Expects a ready MediaPipe SelfieSegmentation instance in the global `maskSegmentation`.
+function generateMask(imgElement, onloaded = () => {}) {
+  let maskImg = createImg('', '');
+
+  maskSegmentation.onResults(async (results) => {
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = results.segmentationMask.width;
+    maskCanvas.height = results.segmentationMask.height;
+    const ctx = maskCanvas.getContext('2d');
+
+    // flip horizontally
+    ctx.translate(maskCanvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(results.segmentationMask, 0, 0);
+
+    // convert red-channel mask to greyscale (copy R to G and B)
+    const imageData = ctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];     // red channel holds the mask value
+      data[i]     = r;       // R (keep)
+      data[i + 1] = r;       // G (copy from R)
+      data[i + 2] = r;       // B (copy from R)
+    }
+    ctx.putImageData(imageData, 0, 0);
+    setImageTransform(maskImg.elt, getImageTransformFromElement(imgElement));
+
+    maskImg.elt.onload = onloaded;
+    maskImg.elt.src = maskCanvas.toDataURL();
+  });
+  maskSegmentation.send({ image: imgElement });
+
+  return (maskImg);
+}
+
+// Helper: Promise version of generateMask
+function generateMaskAsync(imgElement) {
+  return new Promise(resolve => {
+    const maskImg = generateMask(imgElement, () => resolve(maskImg));
+  });
+}
+
+/**
+ * Creates a new image element with the mask applied.
+ * Pixels where the mask is dark (black) become transparent.
+ * @param {HTMLImageElement|p5.Element} colorImg - the colour image
+ * @param {HTMLImageElement|p5.Element} maskImg - the greyscale mask (white = keep, black = transparent)
+ * @returns {p5.Element} - a new p5 img element containing the masked image
+ */
+function applyMaskToImage(colorImg, maskImg, invert = false, onloaded = () => {}) {
+  let resultImg = createImg('', '');
+
+  const w = colorImg.naturalWidth || colorImg.width;
+  const h = colorImg.naturalHeight || colorImg.height;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  ctx.drawImage(colorImg, 0, 0, w, h);
+
+  const colorData = ctx.getImageData(0, 0, w, h);
+  const cPixels = colorData.data;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(maskImg, 0, 0, w, h);
+  const maskData = ctx.getImageData(0, 0, w, h);
+  const mPixels = maskData.data;
+
+  for (let i = 0; i < cPixels.length; i += 4) {
+    const maskVal = invert ? 255 - mPixels[i] : mPixels[i];
+    cPixels[i] = maskVal > 0 ? cPixels[i] : random(255);
+    cPixels[i + 1] = maskVal > 0 ? cPixels[i + 1] : random(255);
+    cPixels[i + 2] = maskVal > 0 ? cPixels[i + 2] : random(255);
+    cPixels[i + 3] = maskVal;
+  }
+
+  ctx.putImageData(colorData, 0, 0);
+  setImageTransform(resultImg.elt, getImageTransformFromElement(colorImg));
+
+  resultImg.elt.onload = onloaded;
+  resultImg.elt.src = canvas.toDataURL();
+
+  return resultImg;
+}
+
+// Helper: Promise version of applyMaskToImage
+function applyMaskToImageAsync(colorImg, maskImg, invert) {
+  return new Promise(resolve => {
+    const resultImg = applyMaskToImage(colorImg, maskImg, invert, () => resolve(resultImg));
+  });
+}
+
+// processHomography is defined further down. getTextureFromElement and
+// drawProjectedImage come from shimage.js (already loaded).
 
 // Cache of desaturated (greyscale) copies of images, keyed by the original
 // element — computed once and reused. tint() alone can only dim/tint a
@@ -150,7 +316,7 @@ function getGreyscaleElement(img) {
   return canvas;
 }
 
-// drawProjectedImage now lives in imgproc.js
+// drawProjectedImage now lives in shimage.js
 
 function upsertMedia(id) {
   if (!id) return null;
