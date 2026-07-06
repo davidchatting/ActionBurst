@@ -435,39 +435,26 @@ function processHomography(id) {
     // Skip images that haven't been aligned yet
     if (!t0A) continue;
 
-    Align_img(image_a, image_b);
+    const result = alignImagePair(image_a, image_b);
 
-    const inlierCount = (good_inlier_matches && good_inlier_matches.size) ? good_inlier_matches.size() : 0;
+    if (result.valid && result.inliers > bestInliers) {
+      const tAa = getImageTransformFromElement(image_a);
+      const tBb = getImageTransformFromElement(image_b);
+      const tBb_i = invertMatrix4x4(tBb);
+      const tAB = multiplyMatrix4x4(multiplyMatrix4x4(tAa, result.transform), tBb_i);
 
-    if (h && !h.empty() && h.data64F) {
-      const check = isReasonableHomography(Array.from(h.data64F));
+      bestT0B = multiplyMatrix4x4(t0A, tAB);
+      bestInliers = result.inliers;
+      bestMatchId = image_a.parentElement.id;
 
-      if (check.valid && inlierCount > bestInliers) {
-        const tab = [
-          h.data64F[0], h.data64F[1], 0, h.data64F[2],
-          h.data64F[3], h.data64F[4], 0, h.data64F[5],
-          0, 0, 1, 0,
-          h.data64F[6], h.data64F[7], 0, h.data64F[8]
-        ];
-
-        const tAa = getImageTransformFromElement(image_a);
-        const tBb = getImageTransformFromElement(image_b);
-        const tBb_i = invertMatrix4x4(tBb);
-        const tAB = multiplyMatrix4x4(multiplyMatrix4x4(tAa, tab), tBb_i);
-
-        bestT0B = multiplyMatrix4x4(t0A, tAB);
-        bestInliers = inlierCount;
-        bestMatchId = image_a.parentElement.id;
-
-        // Candidates are tried nearest-in-time first (i counts down from n-2),
-        // so a confident match here is very likely the best one available —
-        // stop searching rather than aligning against every earlier frame too.
-        if (bestInliers >= EARLY_EXIT_INLIER_THRESHOLD) {
-          break;
-        }
-      } else if (!check.valid) {
-        console.warn('Rejecting homography with', image_a.parentElement.id, ':', check.reason);
+      // Candidates are tried nearest-in-time first (i counts down from n-2),
+      // so a confident match here is very likely the best one available —
+      // stop searching rather than aligning against every earlier frame too.
+      if (bestInliers >= EARLY_EXIT_INLIER_THRESHOLD) {
+        break;
       }
+    } else if (!result.valid) {
+      console.warn('Rejecting homography with', image_a.parentElement.id, ':', result.reason);
     }
   }
 
