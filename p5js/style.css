@@ -1,0 +1,22 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  /* background-color: black; */
+}
+
+canvas {
+  display: block;
+}
+
+#debug-time {
+  font-family: monospace;
+  padding: 4px 8px;
+}
+
+#media {
+  visibility: hidden;
+}
+
+#export.img {
+  width: 100px;
+} 

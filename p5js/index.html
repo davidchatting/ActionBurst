@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head> 
+    <script src="https://cdn.jsdelivr.net/gh/davidchatting/cdn/opencv.js" onload="console.log('OpenCV Ready');"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@latest/selfie_segmentation.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.10.0/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.10.0/addons/p5.sound.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
+    <script src="https://davidchatting.com/p5js-experiments/js/shimage.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/davidchatting/opencv-featurematch@main/align_img.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/davidchatting/opencv-featurematch@main/imgproc.js"></script>
+    <script src="sketch.js"></script>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <meta charset="utf-8" />
+
+  </head>
+  <body>
+    <main></main>
+    <div id="debug-time"></div>
+    <div id="export"></div>
+    <div id="media">
+      <div id="images/DSC_2550.JPG">
+        <img src="images/DSC_2550.JPG" class="original" />
+      </div>
+      <div id="images/DSC_2551.JPG">
+        <img src="images/DSC_2551.JPG" class="original" />
+      </div>
+    </div>
+  </body>
+</html>
