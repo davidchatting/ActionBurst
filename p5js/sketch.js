@@ -602,15 +602,16 @@ function processHomography(id) {
     if (!t0A) continue;
 
     const result = alignImagePair(image_a, image_b);
+    const inliers = result.inlierMatches.length;
 
-    if (result.valid && result.inliers > bestInliers) {
+    if (result.valid && inliers > bestInliers) {
       const tAa = getImageTransformFromElement(image_a);
       const tBb = getImageTransformFromElement(image_b);
       const tBb_i = invertMatrix4x4(tBb);
       const tAB = multiplyMatrix4x4(multiplyMatrix4x4(tAa, result.transform), tBb_i);
 
       bestT0B = multiplyMatrix4x4(t0A, tAB);
-      bestInliers = result.inliers;
+      bestInliers = inliers;
       bestMatchId = image_a.parentElement.id;
 
       // Candidates are tried nearest-in-time first (i counts down from n-2),
