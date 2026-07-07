@@ -1,4 +1,5 @@
-// identityMatrix now lives in imgproc.js
+// identityMatrix, applyTransform4x4, multiplyMatrix4x4, invertMatrix4x4 and
+// to2dAffine live in shimage.js; stripShear lives in opencv-featurematch-js.js
 const imageTransforms = [];
 let mediaBoundingBox = null;
 
@@ -92,6 +93,11 @@ async function setup() {
 
   // Block until segmenter is ready
   await createForegroundSegmenter();
+
+  // opencv.js's <script onload> fires once its JS wrapper has loaded, not
+  // once its WASM runtime has actually finished initializing - wait for both
+  // it and shimage.js before anything below can call into either.
+  await featurematchReady();
 
   // ensure texture UVs use normalized coordinates
   textureMode(NORMAL);
@@ -466,8 +472,9 @@ function draw() {
   }
 }
 
-// applyTransform4x4, applyMaskToImage(+Async), isReasonableHomography, and the
-// 4x4 matrix helpers (multiply/invert/determinant/cofactor) now live in imgproc.js
+// applyMaskToImage(+Async) is defined above. isReasonableHomography lives in
+// opencv-featurematch-js.js; applyTransform4x4 and the other 4x4 matrix
+// helpers (multiply/invert/determinant/cofactor) live in shimage.js
 
 function keyPressed() {
   if (key === 'x' || key === 'X') {
@@ -597,7 +604,11 @@ function processHomography(id) {
     // Skip images that haven't been aligned yet
     if (!t0A) continue;
 
-    const result = alignImagePair(image_a, image_b);
+    // alignImages(a, b) now maps a -> b (flipped from the old alignImagePair,
+    // which mapped its second argument onto its first) - called here swapped,
+    // as (image_b, image_a), so result.transform still maps b -> a, matching
+    // the tAa/tBb composition below.
+    const result = alignImages(image_b, image_a);
     const inliers = result.inlierMatches.length;
 
     if (result.valid && inliers > bestInliers) {
@@ -803,7 +814,7 @@ function updateDebugTimeDisplay(elapsed, highlightIndex) {
   el.textContent = `elapsed: ${elapsed.toFixed(0)}ms | speed: ${PLAYBACK_SPEED}x | phase: ${phase} | highlighted: ${highlightLabel}`;
 }
 
-// stripShear now lives in imgproc.js
+// stripShear lives in opencv-featurematch-js.js
 
 // Fits a single image edge-to-edge ("square" to the camera) into a
 // perspective camera's view, deriving size/center/roll directly from its own
