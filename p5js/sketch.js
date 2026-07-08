@@ -655,6 +655,18 @@ function processHomography(id) {
 }
 
 async function processAnyAttachedMedia() {
+  // If #media itself carries a data-key (the compressed, base64-encoded
+  // output revealMediaForCopying() produces), decode it and use it to
+  // populate #media's children before anything else runs - this lets a
+  // page ship just that one compact attribute instead of the full,
+  // already-aligned div/img markup, and processImage()'s own
+  // already-aligned check then skips re-running segmentation on it.
+  const mediaElement = select('#media')?.elt;
+  const key = mediaElement?.getAttribute('data-key');
+  if (key) {
+    mediaElement.innerHTML = await decompressFromBase64(key);
+  }
+
   const originals = selectAll('#media .original');
   // Wait for all images to load
   await Promise.all(originals.map(i => {
@@ -721,6 +733,13 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 // gzip-compresses text via the browser's built-in CompressionStream, then
 // base64-encodes the compressed bytes into a single copyable string.
 async function compressToBase64(text) {
@@ -743,6 +762,30 @@ async function compressToBase64(text) {
   }
 
   return bytesToBase64(compressedBytes);
+}
+
+// Inverse of compressToBase64(): base64-decodes then gunzips via
+// DecompressionStream, back to the original text.
+async function decompressFromBase64(base64) {
+  const ds = new DecompressionStream('gzip');
+  const writer = ds.writable.getWriter();
+  writer.write(base64ToBytes(base64));
+  writer.close();
+
+  const chunks = [];
+  const reader = ds.readable.getReader();
+  for (let result = await reader.read(); !result.done; result = await reader.read()) {
+    chunks.push(result.value);
+  }
+
+  const decompressedBytes = new Uint8Array(chunks.reduce((sum, c) => sum + c.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    decompressedBytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return new TextDecoder().decode(decompressedBytes);
 }
 
 // Orders images by their recovered capture sequence and records each one's
