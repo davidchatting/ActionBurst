@@ -996,6 +996,13 @@ function getImageTimestampFromElement(element) {
 }
 
 async function processImage(originalImgElement, div) {
+  // Already aligned (e.g. baked into the page's static HTML by a previous
+  // run) — skip the segmentation/masking pipeline, since processHomography()
+  // would just throw its output away via its own already-aligned check.
+  // Trade-off: without a .background element, a pre-aligned frame like this
+  // can no longer be used as a match candidate for any newly-dropped photo.
+  if (getImageTransformFromElement(div)) return;
+
   // 1. Generate low-res image and wait for it to load
   const lowResImg = await generateLowResImageAsync(originalImgElement);
   lowResImg.parent(div);
