@@ -698,8 +698,8 @@ async function processAnyAttachedMedia() {
 // .lowres/.mask/.foreground/.background img elements processImage() also
 // leaves on each div are pipeline intermediates carrying base64 image data
 // - stripped here, then the remaining markup (each div plus its .original
-// img) is gzip-compressed and base62-encoded into #media-html, for copying
-// out of the page as a compact alphanumeric string.
+// img) is gzip-compressed and base64-encoded into #media-html, for copying
+// out of the page as a compact string.
 async function revealMediaForCopying() {
   const mediaElement = select('#media')?.elt;
   const outputElement = select('#media-html')?.elt;
@@ -712,37 +712,18 @@ async function revealMediaForCopying() {
 
   const clone = mediaElement.cloneNode(true);
   clone.querySelectorAll('img:not(.original)').forEach(img => img.remove());
-  outputElement.textContent = await compressToAlphanumeric(clone.outerHTML);
+  outputElement.textContent = await compressToBase64(clone.outerHTML);
 }
 
-const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-
-// Converts bytes to a base62 (strictly alphanumeric) string. Leading zero
-// bytes are preserved as leading '0' characters, since treating the whole
-// byte array as one big integer would otherwise silently drop them.
-function bytesToBase62(bytes) {
-  let leadingZeros = 0;
-  for (const b of bytes) {
-    if (b !== 0) break;
-    leadingZeros++;
-  }
-
-  let value = 0n;
-  for (const b of bytes) value = (value << 8n) | BigInt(b);
-
-  let digits = '';
-  while (value > 0n) {
-    digits = BASE62_CHARS[Number(value % 62n)] + digits;
-    value /= 62n;
-  }
-
-  return BASE62_CHARS[0].repeat(leadingZeros) + digits;
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
 }
 
 // gzip-compresses text via the browser's built-in CompressionStream, then
-// base62-encodes the compressed bytes so the result is safe to paste
-// anywhere only alphanumeric characters are expected.
-async function compressToAlphanumeric(text) {
+// base64-encodes the compressed bytes into a single copyable string.
+async function compressToBase64(text) {
   const cs = new CompressionStream('gzip');
   const writer = cs.writable.getWriter();
   writer.write(new TextEncoder().encode(text));
@@ -761,7 +742,7 @@ async function compressToAlphanumeric(text) {
     offset += chunk.length;
   }
 
-  return bytesToBase62(compressedBytes);
+  return bytesToBase64(compressedBytes);
 }
 
 // Orders images by their recovered capture sequence and records each one's
