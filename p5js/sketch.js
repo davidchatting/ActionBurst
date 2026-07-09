@@ -22,15 +22,18 @@ let maskSegmentation = null;
 // Real-time playback of the capture sequence, driven by each image's EXIF timestamp.
 const PLAYBACK_START_PAUSE_MS = 3000;
 const PLAYBACK_END_PAUSE_MS = 3000;
-const PLAYBACK_SPEED = 0.5; // 1 = real-time (matches original capture pace), 0.5 = half speed
+const PLAYBACK_SPEED = 0.1; // 1 = real-time (matches original capture pace), 0.1 = a tenth speed
 let playbackSchedule = [];
 let playbackStartMillis = 0;
 
-// The image currently shown in full colour — whichever most recently started
-// its own hold. It persists (rather than reverting) once its hold/fade ends,
-// until the next image's hold begins and takes over. Every other image still
-// shows, desaturated, in the background (see draw()).
+// The constant background level shown outside any image's own hold window.
+const LOW_ALPHA = 0.1;
+
+// The single image currently shown (only one is ever drawn - see draw()).
+// Persists (rather than reverting to none) once its hold/fade ends, until
+// the next image's hold begins and takes over.
 let currentDisplayIndex = -1;
+let currentDisplayAlpha = LOW_ALPHA;
 
 // Space bar pauses/resumes playback. Pausing just freezes the clock that
 // drives everything else (getPlaybackElapsedMs) rather than touching
@@ -61,9 +64,6 @@ const HOLD_MS = 500;
 // hold window (real ms, same convention as HOLD_MS). Clamped to the hold
 // window's own length if HOLD_MS is shorter.
 const FADE_MS = 150;
-
-// The constant background level every image sits at outside its own hold window.
-const LOW_ALPHA = 0.1;
 
 // 3D camera fly-through: one keyframe per aligned image, framing that image
 // alone, timed to the exact same clock as playbackSchedule above — the camera
@@ -317,39 +317,6 @@ function applyMaskToImageAsync(colorImg, maskImg, invert) {
 // processHomography is defined further down. getTextureFromElement and
 // drawProjectedImage come from shimage.js (already loaded).
 
-// Cache of desaturated (greyscale) copies of images, keyed by the original
-// element — computed once and reused. tint() alone can only dim/tint a
-// texture, not actually desaturate it, so background images get a genuinely
-// greyscale copy drawn instead of the colour original. Uses a plain 2D
-// canvas pixel loop rather than p5's built-in filter(GRAY) on a
-// createGraphics() buffer — that threw a WebGL "useProgram" error and broke
-// the whole canvas, since it shares/conflicts with the main sketch's own
-// WEBGL context.
-const greyscaleCache = new WeakMap();
-
-function getGreyscaleElement(img) {
-  if (greyscaleCache.has(img)) return greyscaleCache.get(img);
-
-  const w = img.naturalWidth || img.width;
-  const h = img.naturalHeight || img.height;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0, w, h);
-
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    const grey = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    data[i] = data[i + 1] = data[i + 2] = grey;
-  }
-  ctx.putImageData(imageData, 0, 0);
-
-  greyscaleCache.set(img, canvas);
-  return canvas;
-}
 
 // drawProjectedImage now lives in shimage.js
 
@@ -424,26 +391,48 @@ function draw() {
   const scheduledIndices = playbackSchedule.map(e => e.index);
   mediaBoundingBox = getBoundingBox(imageSelector, scheduledIndices);
 
-  // The most recently active image fades smoothly up to full colour opacity
-  // right as its own scheduled moment begins (never before), then back down
-  // to LOW_ALPHA, and simply persists highlighted once its own fade ends
-  // until the next image's hold takes over. Rewind never starts a new hold —
-  // it's just the camera travelling back to the start.
   const elapsed = getPlaybackElapsedMs();
-  const rewinding = isRewinding();
+  const phase = getPlaybackPhase();
   const holdWindow = HOLD_MS * PLAYBACK_SPEED;
   const fadeWindow = Math.min(FADE_MS * PLAYBACK_SPEED, holdWindow);
 
-  const alphas = playbackSchedule.map(entry => rewinding ? LOW_ALPHA : holdAlphaAt(elapsed, entry.offsetMs, holdWindow, fadeWindow));
+  // Exactly one image is shown at a time. It holds at full opacity on the
+  // first image throughout the start pause, and on the last image
+  // throughout the end pause, rather than the screen going blank there.
+  // During forward playback, each image follows its own hold/fade window in
+  // turn (holdAlphaAt); the most recently active one keeps showing at
+  // LOW_ALPHA until the next image's window begins. Rewind shows nothing —
+  // it's just the camera travelling back to the start.
+  let highlightIndex = -1;
+  let highlightAlpha = LOW_ALPHA;
 
-  let highlightPos = 0;
-  for (let p = 1; p < alphas.length; p++) {
-    if (alphas[p] > alphas[highlightPos]) highlightPos = p;
+  if (phase === 'start-pause') {
+    highlightIndex = playbackSchedule[0].index;
+    highlightAlpha = 1;
+  } else if (phase === 'end-pause') {
+    highlightIndex = playbackSchedule[playbackSchedule.length - 1].index;
+    highlightAlpha = 1;
+  } else if (phase === 'forward') {
+    let bestPos = 0;
+    let bestAlpha = -Infinity;
+    for (let p = 0; p < playbackSchedule.length; p++) {
+      const a = holdAlphaAt(elapsed, playbackSchedule[p].offsetMs, holdWindow, fadeWindow);
+      if (a > bestAlpha) { bestAlpha = a; bestPos = p; }
+    }
+    if (bestAlpha > LOW_ALPHA) {
+      highlightIndex = playbackSchedule[bestPos].index;
+      highlightAlpha = bestAlpha;
+    }
   }
-  const highlighted = alphas[highlightPos] > LOW_ALPHA;
-  if (highlighted) currentDisplayIndex = playbackSchedule[highlightPos].index;
 
-  updateDebugTimeDisplay(elapsed, highlighted ? currentDisplayIndex : -1);
+  if (highlightIndex >= 0) {
+    currentDisplayIndex = highlightIndex;
+    currentDisplayAlpha = highlightAlpha;
+  } else if (currentDisplayIndex >= 0) {
+    currentDisplayAlpha = LOW_ALPHA;
+  }
+
+  updateDebugTimeDisplay(elapsed, highlightIndex);
 
   // The camera is always continuously interpolating between keyframes,
   // independent of which image (if any) is currently held at full opacity —
@@ -460,43 +449,16 @@ function draw() {
     );
   }
 
-  // Every other (unhighlighted) image still shows in the background, but
-  // desaturated to greyscale at the constant low alpha, so the current
-  // highlighted image (full colour) reads clearly as "the one in focus".
-  // Depth writes are disabled — otherwise the nearer quad's depth value
-  // would block farther ones from blending through underneath it.
   const mediaElement = select('#media')?.elt;
-  if (mediaElement) {
-    push();
-      drawingContext.depthMask(false);
-
-      for (let p = 0; p < playbackSchedule.length; p++) {
-        const entry = playbackSchedule[p];
-        if (entry.index === currentDisplayIndex) continue;
-        const image = mediaElement.children[entry.index].querySelector(imageSelector);
-        if (!image) continue;
-
-        push();
-          tint(255, 255 * LOW_ALPHA);
-          const t = stripShear(getImageTransformFromElement(image, true));
-          drawProjectedImage(getGreyscaleElement(image), 0, 0, t, -p);
-        pop();
-      }
-
-      if (currentDisplayIndex >= 0) {
-        const pos = playbackSchedule.findIndex(e => e.index === currentDisplayIndex);
-        const image = mediaElement.children[currentDisplayIndex].querySelector(imageSelector);
-        if (image) {
-          push();
-            tint(255, 255 * (pos >= 0 ? alphas[pos] : LOW_ALPHA));
-            const t = stripShear(getImageTransformFromElement(image, true));
-            drawProjectedImage(image, 0, 0, t, 0);
-          pop();
-        }
-      }
-
-      drawingContext.depthMask(true);
-    pop();
+  if (mediaElement && currentDisplayIndex >= 0) {
+    const image = mediaElement.children[currentDisplayIndex].querySelector(imageSelector);
+    if (image) {
+      push();
+        tint(255, 255 * currentDisplayAlpha);
+        const t = stripShear(getImageTransformFromElement(image, true));
+        drawProjectedImage(image, 0, 0, t, 0);
+      pop();
+    }
   }
 }
 
@@ -930,6 +892,22 @@ function isRewinding() {
   const { realExtendedTravelDuration, realElapsed } = getPlaybackPhaseInfo();
   const realForwardElapsed = realElapsed - PLAYBACK_START_PAUSE_MS;
   return realForwardElapsed >= realExtendedTravelDuration + PLAYBACK_END_PAUSE_MS;
+}
+
+// One of 'start-pause' | 'forward' | 'end-pause' | 'rewind' — same phase
+// boundaries as getPlaybackElapsedMs()/isRewinding(), exposed directly so
+// draw() can hold on the first image throughout the start pause and the
+// last image throughout the end pause.
+function getPlaybackPhase() {
+  if (playbackSchedule.length === 0) return 'forward';
+
+  const { realExtendedTravelDuration, realElapsed } = getPlaybackPhaseInfo();
+  if (realElapsed < PLAYBACK_START_PAUSE_MS) return 'start-pause';
+
+  const realForwardElapsed = realElapsed - PLAYBACK_START_PAUSE_MS;
+  if (realForwardElapsed < realExtendedTravelDuration) return 'forward';
+  if (realForwardElapsed < realExtendedTravelDuration + PLAYBACK_END_PAUSE_MS) return 'end-pause';
+  return 'rewind';
 }
 
 // Alpha (0..1) for one image at the given elapsed time: LOW_ALPHA before its
