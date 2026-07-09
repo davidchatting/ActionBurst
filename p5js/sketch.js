@@ -453,12 +453,9 @@ function draw() {
 
   updateDebugTimeDisplay(elapsed, highlightIndex);
 
-  // The camera is always continuously interpolating between keyframes,
-  // independent of which image (if any) is currently held at full opacity —
-  // it keeps moving throughout every hold window rather than freezing on a
-  // single keyframe, and only actually comes to rest during the real
-  // end-of-sequence pause (getCameraPose() naturally settles on the last
-  // keyframe there, since elapsed is pushed beyond every keyframe's time).
+  // The camera stays parked on each image's own keyframe throughout that
+  // image's hold/fade window (see getCameraPose()), only travelling to the
+  // next keyframe once that window ends - it doesn't pan away mid-burst.
   const camPose = getCameraPose();
   if (camPose) {
     camera(
@@ -1039,10 +1036,11 @@ function lerp3(a, b, t) {
 }
 
 // Returns the interpolated {eye, center, up} camera pose for the current
-// moment: exactly kfA at kfA.time, exactly kfB at kfB.time, travelling smoothly
-// between — using the same elapsed clock that gates each image's own moment
-// window in draw(), so the camera is always centred on whichever image (if
-// any) is currently in its moment.
+// moment: exactly kfA from kfA.time through kfA's own hold/fade window (the
+// camera stays parked there for the full "burst" rather than immediately
+// setting off for kfB), then travels the remaining gap, arriving exactly at
+// kfB by kfB.time. Uses the same elapsed clock that gates each image's own
+// moment window in draw().
 function getCameraPose() {
   if (cameraKeyframes.length === 0) return null;
   if (cameraKeyframes.length === 1) return cameraKeyframes[0];
@@ -1056,8 +1054,10 @@ function getCameraPose() {
   const kfB = cameraKeyframes[Math.min(i + 1, cameraKeyframes.length - 1)];
   if (kfA === kfB) return kfA;
 
-  const span = kfB.time - kfA.time;
-  const t = span > 0 ? constrain((elapsed - kfA.time) / span, 0, 1) : 1;
+  const holdWindow = HOLD_MS * PLAYBACK_SPEED;
+  const departTime = kfA.time + holdWindow;
+  const span = kfB.time - departTime;
+  const t = elapsed <= departTime ? 0 : (span > 0 ? constrain((elapsed - departTime) / span, 0, 1) : 1);
 
   return {
     eye: lerp3(kfA.eye, kfB.eye, t),
