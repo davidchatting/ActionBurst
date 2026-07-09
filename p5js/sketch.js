@@ -102,7 +102,7 @@ async function setup() {
   // Use WEBGL so texture()/vertex(u,v) in drawImageWithHomography works
   canvas = createCanvas(CANVAS_WIDTH, CANVAS_WIDTH, WEBGL);
   canvas.parent('canvas-target'); // explicit target, rather than p5's default append-to-body
-  frameRate(10);
+  frameRate(60);
   canvas.drop(onFileDropped);
 
   // Block until segmenter is ready
