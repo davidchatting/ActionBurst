@@ -20,8 +20,12 @@ const CAMERA_FOV_Y = Math.PI / 3; // 60deg. Math.PI (not p5's PI global, unavail
 let maskSegmentation = null;
 
 // Real-time playback of the capture sequence, driven by each image's EXIF timestamp.
-const PLAYBACK_START_PAUSE_MS = 3000;
-const PLAYBACK_END_PAUSE_MS = 3000;
+// Both 0: no held-still pause at either end - forward playback begins the
+// instant rewind arrives back at the first image, and rewind begins the
+// instant the last image's own hold ends, so the whole thing just loops
+// continuously.
+const PLAYBACK_START_PAUSE_MS = 0;
+const PLAYBACK_END_PAUSE_MS = 0;
 const PLAYBACK_SPEED = 0.5; // 1 = real-time (matches original capture pace), 0.5 = half speed
 let playbackSchedule = [];
 let playbackStartMillis = 0;
