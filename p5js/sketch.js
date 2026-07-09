@@ -399,10 +399,11 @@ function draw() {
   // Exactly one image is shown at a time. It holds at full opacity on the
   // first image throughout the start pause, and on the last image
   // throughout the end pause, rather than the screen going blank there.
-  // During forward playback, each image follows its own hold/fade window in
-  // turn (holdAlphaAt); the most recently active one keeps showing at
-  // LOW_ALPHA until the next image's window begins. Rewind shows nothing —
-  // it's just the camera travelling back to the start.
+  // During forward playback AND rewind, each image follows its own
+  // hold/fade window in turn (holdAlphaAt) as elapsed passes through it -
+  // rewind just runs that same elapsed clock backwards, over
+  // REWIND_DURATION_MS. The most recently active image keeps showing at
+  // LOW_ALPHA between windows.
   let highlightIndex = -1;
   let highlightAlpha = LOW_ALPHA;
 
@@ -412,7 +413,7 @@ function draw() {
   } else if (phase === 'end-pause') {
     highlightIndex = playbackSchedule[playbackSchedule.length - 1].index;
     highlightAlpha = 1;
-  } else if (phase === 'forward') {
+  } else if (phase === 'forward' || phase === 'rewind') {
     let bestPos = 0;
     let bestAlpha = -Infinity;
     for (let p = 0; p < playbackSchedule.length; p++) {
@@ -821,10 +822,10 @@ function buildPlaybackSchedule() {
   playbackStartMillis = millis();
 }
 
-// Rewind travels back to the start this many times faster than forward
-// playback — a quick single motion rather than a full-speed mirror of the
-// forward pass.
-const REWIND_SPEED_MULTIPLIER = 2;
+// Rewind always takes exactly this long in real wall-clock time, regardless
+// of the burst's total duration (lastOffset) — a quick single motion rather
+// than a speed-scaled mirror of the forward pass.
+const REWIND_DURATION_MS = 1000;
 
 // Shared phase arithmetic for getPlaybackElapsedMs() and isRewinding(), all
 // using the pausable getEffectiveMillis() clock. Five phases:
@@ -840,13 +841,15 @@ const REWIND_SPEED_MULTIPLIER = 2;
 //     HOLD_MS afterward.
 //  4. End-of-sequence pause: always PLAYBACK_END_PAUSE_MS of real wall-clock
 //     time regardless of speed.
-//  5. Rewind: lastOffset -> 0, at REWIND_SPEED_MULTIPLIER x the forward speed.
+//  5. Rewind: lastOffset -> 0, always over exactly REWIND_DURATION_MS of
+//     real time (rewindSpeed is derived from lastOffset so the whole
+//     timeline fits in that fixed duration, however long the burst is).
 function getPlaybackPhaseInfo() {
   const lastOffset = playbackSchedule[playbackSchedule.length - 1].offsetMs;
   const realTravelDuration = lastOffset / PLAYBACK_SPEED;
   const realExtendedTravelDuration = realTravelDuration + HOLD_MS;
-  const rewindSpeed = PLAYBACK_SPEED * REWIND_SPEED_MULTIPLIER;
-  const realRewindDuration = lastOffset / rewindSpeed;
+  const realRewindDuration = REWIND_DURATION_MS;
+  const rewindSpeed = lastOffset / realRewindDuration;
   const realCycleLength = PLAYBACK_START_PAUSE_MS + realExtendedTravelDuration + PLAYBACK_END_PAUSE_MS + realRewindDuration;
   const realElapsed = (getEffectiveMillis() - playbackStartMillis) % realCycleLength;
 
