@@ -22,7 +22,7 @@ let maskSegmentation = null;
 // Real-time playback of the capture sequence, driven by each image's EXIF timestamp.
 const PLAYBACK_START_PAUSE_MS = 3000;
 const PLAYBACK_END_PAUSE_MS = 3000;
-const PLAYBACK_SPEED = 0.8; // 1 = real-time (matches original capture pace), 0.8 = four-fifths speed
+const PLAYBACK_SPEED = 0.6; // 1 = real-time (matches original capture pace), 0.6 = three-fifths speed
 let playbackSchedule = [];
 let playbackStartMillis = 0;
 
@@ -317,39 +317,6 @@ function applyMaskToImageAsync(colorImg, maskImg, invert) {
 // processHomography is defined further down. getTextureFromElement and
 // drawProjectedImage come from shimage.js (already loaded).
 
-// Cache of desaturated (greyscale) copies of images, keyed by the original
-// element — computed once and reused. Used only during rewind (see draw()).
-// tint() alone can only dim/tint a texture, not actually desaturate it, so
-// a genuinely greyscale copy is drawn instead. Uses a plain 2D canvas pixel
-// loop rather than p5's built-in filter(GRAY) on a createGraphics() buffer
-// — that threw a WebGL "useProgram" error and broke the whole canvas, since
-// it shares/conflicts with the main sketch's own WEBGL context.
-const greyscaleCache = new WeakMap();
-
-function getGreyscaleElement(img) {
-  if (greyscaleCache.has(img)) return greyscaleCache.get(img);
-
-  const w = img.naturalWidth || img.width;
-  const h = img.naturalHeight || img.height;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0, w, h);
-
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    const grey = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    data[i] = data[i + 1] = data[i + 2] = grey;
-  }
-  ctx.putImageData(imageData, 0, 0);
-
-  greyscaleCache.set(img, canvas);
-  return canvas;
-}
-
 // drawProjectedImage now lives in shimage.js
 
 function upsertMedia(id) {
@@ -474,7 +441,7 @@ function draw() {
       if (d < bestDist) { bestDist = d; bestPos = p; }
     }
     highlightIndex = playbackSchedule[bestPos].index;
-    highlightAlpha = 1;
+    highlightAlpha = LOW_ALPHA;
   }
 
   if (highlightIndex >= 0) {
@@ -505,15 +472,10 @@ function draw() {
   if (mediaElement && currentDisplayIndex >= 0) {
     const image = mediaElement.children[currentDisplayIndex].querySelector(imageSelector);
     if (image) {
-      // Rewind shows a desaturated copy - full colour only during actual
-      // playback (forward/pauses), so rewind reads visually distinct from
-      // a second forward playthrough.
-      const source = phase === 'rewind' ? getGreyscaleElement(image) : image;
-
       push();
         tint(255, 255 * currentDisplayAlpha);
         const t = stripShear(getImageTransformFromElement(image, true));
-        drawProjectedImage(source, 0, 0, t, 0);
+        drawProjectedImage(image, 0, 0, t, 0);
       pop();
     }
   }
