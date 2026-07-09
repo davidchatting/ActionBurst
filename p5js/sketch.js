@@ -60,7 +60,7 @@ const FALLBACK_FRAME_SPACING_MS = 500;
 // at full opacity for this long afterward (real wall-clock ms, NOT scaled by
 // PLAYBACK_SPEED) — never before its own time, only after. Every image still
 // shows faintly at all times via the constant low alpha in draw().
-const HOLD_MS = 500;
+const HOLD_MS = 200;
 
 // Alpha jumps instantly to full opacity when a photo's hold begins, then
 // ramps smoothly back down to LOW_ALPHA over this much of the end of the
