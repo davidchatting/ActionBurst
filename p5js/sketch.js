@@ -22,7 +22,7 @@ let maskSegmentation = null;
 // Real-time playback of the capture sequence, driven by each image's EXIF timestamp.
 const PLAYBACK_START_PAUSE_MS = 3000;
 const PLAYBACK_END_PAUSE_MS = 3000;
-const PLAYBACK_SPEED = 0.3; // 1 = real-time (matches original capture pace), 0.3 = three-tenths speed
+const PLAYBACK_SPEED = 1; // 1 = real-time (matches original capture pace)
 let playbackSchedule = [];
 let playbackStartMillis = 0;
 
