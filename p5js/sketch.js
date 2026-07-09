@@ -1054,14 +1054,38 @@ function lerp3(a, b, t) {
   ];
 }
 
+// Standard (uniform) Catmull-Rom spline through p1->p2, using p0/p3 as the
+// neighbouring control points that shape the curve's tangents. Passes
+// exactly through p1 at t=0 and p2 at t=1, same as lerp(p1, p2, t) would -
+// only the path between them curves instead of following a straight line.
+function catmullRom1D(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
+function catmullRom3(p0, p1, p2, p3, t) {
+  return [
+    catmullRom1D(p0[0], p1[0], p2[0], p3[0], t),
+    catmullRom1D(p0[1], p1[1], p2[1], p3[1], t),
+    catmullRom1D(p0[2], p1[2], p2[2], p3[2], t)
+  ];
+}
+
 // Returns the interpolated {eye, center, up} camera pose for the current
 // moment. Forward: exactly kfA from kfA.time through kfA's own hold/fade
 // window (the camera stays parked there for the full "burst" rather than
-// immediately setting off for kfB), then travels the remaining gap,
-// arriving exactly at kfB by kfB.time. Rewind: a direct straight line from
-// the last keyframe back to the first, over REWIND_DURATION_MS - no need to
-// retrace every intermediate keyframe on the way back. Uses the same
-// elapsed clock that gates each image's own moment window in draw().
+// immediately setting off for kfB), then travels the remaining gap along a
+// Catmull-Rom curve through the surrounding keyframes, arriving exactly at
+// kfB by kfB.time. Rewind: a direct straight line from the last keyframe
+// back to the first, over REWIND_DURATION_MS - no need to retrace every
+// intermediate keyframe on the way back. Uses the same elapsed clock that
+// gates each image's own moment window in draw().
 function getCameraPose() {
   if (cameraKeyframes.length === 0) return null;
   if (cameraKeyframes.length === 1) return cameraKeyframes[0];
@@ -1093,10 +1117,19 @@ function getCameraPose() {
   const span = kfB.time - departTime;
   const t = elapsed <= departTime ? 0 : (span > 0 ? constrain((elapsed - departTime) / span, 0, 1) : 1);
 
+  // The stop/travel timing above is unchanged - only the spatial path
+  // sampled at a given t is now a Catmull-Rom curve through kfA->kfB
+  // (using the keyframes either side as tangent control points, clamped -
+  // duplicated - at the very start/end) instead of a straight line, so
+  // travel curves smoothly through the whole sequence rather than kinking
+  // at every waypoint.
+  const kfPrev = cameraKeyframes[Math.max(i - 1, 0)];
+  const kfNext = cameraKeyframes[Math.min(i + 2, cameraKeyframes.length - 1)];
+
   return {
-    eye: lerp3(kfA.eye, kfB.eye, t),
-    center: lerp3(kfA.center, kfB.center, t),
-    up: lerp3(kfA.up, kfB.up, t)
+    eye: catmullRom3(kfPrev.eye, kfA.eye, kfB.eye, kfNext.eye, t),
+    center: catmullRom3(kfPrev.center, kfA.center, kfB.center, kfNext.center, t),
+    up: catmullRom3(kfPrev.up, kfA.up, kfB.up, kfNext.up, t)
   };
 }
 
