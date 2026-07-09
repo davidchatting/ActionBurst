@@ -471,12 +471,23 @@ function draw() {
 
   const mediaElement = select('#media')?.elt;
   if (mediaElement && currentDisplayIndex >= 0) {
-    const image = mediaElement.children[currentDisplayIndex].querySelector(imageSelector);
-    if (image) {
+    const imageEl = mediaElement.children[currentDisplayIndex].querySelector(imageSelector);
+    if (imageEl) {
+      // applyMatrix() + image() lets the GPU's own model-matrix stack (and
+      // its automatic perspective divide) do the projection, instead of
+      // drawProjectedImage()'s CPU-side per-corner applyTransform4x4() into
+      // a hand-built textured quad - see
+      // https://editor.p5js.org/davidchatting/sketches/YHF4dsSbR. Still
+      // goes through getTextureFromElement() (shimage.js) rather than
+      // image()'ing the raw <img> directly, since a p5.Graphics is a
+      // proven-compatible WEBGL image() source and a raw DOM element isn't.
+      // (Named imageEl, not image, so it doesn't shadow p5's image()
+      // function within this scope.)
       push();
         tint(255, 255 * currentDisplayAlpha);
-        const t = stripShear(getImageTransformFromElement(image, true));
-        drawProjectedImage(image, 0, 0, t, 0);
+        const t = stripShear(getImageTransformFromElement(imageEl, true));
+        applyMatrix(t);
+        image(getTextureFromElement(imageEl), 0, 0);
       pop();
     }
   }
