@@ -1,0 +1,13 @@
+{
+  "name": "actionburst",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aligns a burst photo sequence (RANSAC feature matching) and plays it back with a fly-through camera",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davidchatting/ActionBurst.git"
+  },
+  "author": "David Chatting (davidchatting.com)",
+  "license": "MIT",
+  "homepage": "https://editor.p5js.org/davidchatting/sketches/91-r3FHTy"
+}

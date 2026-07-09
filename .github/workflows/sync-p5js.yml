@@ -1,0 +1,51 @@
+name: Sync p5js from editor
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Sync p5js/ from the demo sketch (package.json's homepage)
+        run: |
+          SKETCH_ID=$(node -p "require('./package.json').homepage.split('/').pop()")
+          curl -sL "https://editor.p5js.org/editor/projects/${SKETCH_ID}/zip" -o p5js-demo.zip
+
+          rm -rf p5js p5js-tmp
+          mkdir -p p5js-tmp
+          python3 -c "import zipfile; zipfile.ZipFile('p5js-demo.zip').extractall('p5js-tmp')"
+
+          # Only the actual project files - not the CDN libraries (p5.js,
+          # opencv.js, shimage.js, opencv-featurematch-js.js) the editor
+          # bundles into the zip for its own standalone-download use case.
+          mkdir -p p5js
+          cp p5js-tmp/index.html p5js/index.html
+          cp p5js-tmp/sketch.js p5js/sketch.js
+          cp p5js-tmp/style.css p5js/style.css
+          if [ -d p5js-tmp/images ]; then
+            cp -r p5js-tmp/images p5js/images
+          fi
+
+          rm -rf p5js-tmp p5js-demo.zip
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add p5js
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "Sync p5js/ demo from p5.js editor"
+          git push
